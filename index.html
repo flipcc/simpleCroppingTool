@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Circle Crop - rev. 0.0.4</title>
+<title>Circle Crop</title>
 <link rel="manifest" href="manifest.json">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -249,13 +249,16 @@
 </div>
 
 <div id="bg-picker" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:99; align-items:center; justify-content:center;">
-  <div style="background:#fff; border-radius:16px; padding:1.5rem; width:260px; text-align:center;">
-    <p style="font-size:0.9rem; color:#333; margin-bottom:1rem;">Background color</p>
-    <div style="display:flex; gap:10px; justify-content:center; margin-bottom:1.25rem;">
-      <button class="bg-opt" data-bg="white" title="White" style="width:60px;height:60px;border-radius:10px;border:2px solid #ccc;background:white;cursor:pointer;"></button>
-      <button class="bg-opt" data-bg="black" title="Black" style="width:60px;height:60px;border-radius:10px;border:2px solid #ccc;background:black;cursor:pointer;"></button>
-      <button class="bg-opt" data-bg="transparent" title="Transparent" style="width:60px;height:60px;border-radius:10px;border:2px solid #ccc;background:repeating-conic-gradient(#ccc 0% 25%, white 0% 50%) 0 0 / 12px 12px;cursor:pointer;"></button>
+  <div style="background:#fff; border-radius:16px; padding:1.5rem; width:280px; text-align:center;">
+    <p style="font-size:0.9rem; color:#333; margin-bottom:0.75rem;">Background color</p>
+    <div style="display:flex; gap:8px; justify-content:center; margin-bottom:0.75rem;">
+      <button class="bg-opt" data-bg="white" title="White" style="width:54px;height:54px;border-radius:10px;border:2px solid #ccc;background:white;cursor:pointer;"></button>
+      <button class="bg-opt" data-bg="black" title="Black" style="width:54px;height:54px;border-radius:10px;border:2px solid #ccc;background:black;cursor:pointer;"></button>
+      <button class="bg-opt" data-bg="transparent" title="Transparent" style="width:54px;height:54px;border-radius:10px;border:2px solid #ccc;background:repeating-conic-gradient(#ccc 0% 25%, white 0% 50%) 0 0 / 12px 12px;cursor:pointer;"></button>
     </div>
+    <p style="font-size:0.72rem; color:#aaa; margin-bottom:0.75rem;">From your photo</p>
+    <div id="suggested-colors" style="display:flex; gap:8px; justify-content:center; margin-bottom:0.5rem;"></div>
+    <div id="bold-colors" style="display:flex; gap:8px; justify-content:center; margin-bottom:1rem;"></div>
     <p style="font-size:0.7rem; color:#999; margin-bottom:1rem;">Transparent may appear black on iOS</p>
     <button id="bg-cancel" style="font-size:0.85rem; color:#666; background:none; border:none; cursor:pointer;">Cancel</button>
   </div>
@@ -384,7 +387,10 @@ window.addEventListener('touchmove', e => {
 
 window.addEventListener('touchend', () => { dragging = false; pinchDist = null; });
 
-const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+const isIOS = (/iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream)
+  || (navigator.maxTouchPoints > 2 && /MacIntel/.test(navigator.platform) && !/Mac OS X.*Safari/.test(navigator.userAgent.replace('iPhone', '').replace('iPad', '')));
+const hasMouse = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+const isMobileIOS = isIOS && !hasMouse;
 
 function buildCircleDataURL(bg) {
   const out = document.createElement('canvas');
@@ -401,9 +407,56 @@ function buildCircleDataURL(bg) {
   return out.toDataURL('image/png');
 }
 
+function toHex(r, g, b) {
+  return '#' + [r,g,b].map(v => v.toString(16).padStart(2,'0')).join('');
+}
+
+function sampleCornerColors() {
+  const offsets = [
+    [10, 10], [SIZE-10, 10], [10, SIZE-10],
+    [SIZE-10, SIZE-10], [SIZE/2, 10], [10, SIZE/2]
+  ];
+  const samples = offsets.map(([sx, sy]) => {
+    const p = ctx.getImageData(sx, sy, 1, 1).data;
+    return [p[0], p[1], p[2]];
+  });
+  const picked = [samples[0], samples[2], samples[4]];
+  const pastels = picked.map(([r,g,b]) => [
+    Math.round(r * 0.35 + 255 * 0.65),
+    Math.round(g * 0.35 + 255 * 0.65),
+    Math.round(b * 0.35 + 255 * 0.65)
+  ]);
+  const bolds = picked.map(([r,g,b]) => [
+    Math.round(r * 0.6),
+    Math.round(g * 0.6),
+    Math.round(b * 0.6)
+  ]);
+  return { pastels, bolds };
+}
+
+function makeColorBtn(hex) {
+  const btn = document.createElement('button');
+  btn.className = 'bg-opt';
+  btn.dataset.bg = hex;
+  btn.title = hex;
+  btn.style.cssText = `width:54px;height:54px;border-radius:10px;border:2px solid #ccc;background:${hex};cursor:pointer;`;
+  return btn;
+}
+
 function showBgPicker(callback) {
+  const { pastels, bolds } = sampleCornerColors();
+
+  const suggestedDiv = document.getElementById('suggested-colors');
+  const boldDiv = document.getElementById('bold-colors');
+  suggestedDiv.innerHTML = '';
+  boldDiv.innerHTML = '';
+
+  pastels.forEach(([r,g,b]) => suggestedDiv.appendChild(makeColorBtn(toHex(r,g,b))));
+  bolds.forEach(([r,g,b]) => boldDiv.appendChild(makeColorBtn(toHex(r,g,b))));
+
   const picker = document.getElementById('bg-picker');
   picker.style.display = 'flex';
+
   const handler = e => {
     const bg = e.target.dataset.bg;
     if (!bg) return;
@@ -421,7 +474,7 @@ function showBgPicker(callback) {
 document.getElementById('btn-download').addEventListener('click', () => {
   showBgPicker(bg => {
     const dataURL = buildCircleDataURL(bg);
-    if (isIOS) {
+    if (isMobileIOS) {
       document.getElementById('ios-result').src = dataURL;
       document.getElementById('ios-modal').classList.add('open');
     } else {
