@@ -3,7 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Circle Crop - rev. 0.0.3</title>
+<title>Circle Crop - rev. 0.0.4</title>
+<link rel="manifest" href="manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Circle Crop">
+<link rel="apple-touch-icon" href="icon-180.png">
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -243,9 +248,22 @@
   </div>
 </div>
 
+<div id="bg-picker" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:99; align-items:center; justify-content:center;">
+  <div style="background:#fff; border-radius:16px; padding:1.5rem; width:260px; text-align:center;">
+    <p style="font-size:0.9rem; color:#333; margin-bottom:1rem;">Background color</p>
+    <div style="display:flex; gap:10px; justify-content:center; margin-bottom:1.25rem;">
+      <button class="bg-opt" data-bg="white" title="White" style="width:60px;height:60px;border-radius:10px;border:2px solid #ccc;background:white;cursor:pointer;"></button>
+      <button class="bg-opt" data-bg="black" title="Black" style="width:60px;height:60px;border-radius:10px;border:2px solid #ccc;background:black;cursor:pointer;"></button>
+      <button class="bg-opt" data-bg="transparent" title="Transparent" style="width:60px;height:60px;border-radius:10px;border:2px solid #ccc;background:repeating-conic-gradient(#ccc 0% 25%, white 0% 50%) 0 0 / 12px 12px;cursor:pointer;"></button>
+    </div>
+    <p style="font-size:0.7rem; color:#999; margin-bottom:1rem;">Transparent may appear black on iOS</p>
+    <button id="bg-cancel" style="font-size:0.85rem; color:#666; background:none; border:none; cursor:pointer;">Cancel</button>
+  </div>
+</div>
+
 <div id="ios-modal">
   <img id="ios-result" src="" alt="Cropped circle">
-  <p>Long press the image to open the menu, then choose <strong>Save to photos</strong>.</p>
+  <p>Long press the image to open the menu, then choose <strong>Save to Photos</strong>.</p>
   <button id="ios-close">Done</button>
 </div>
 
@@ -368,10 +386,14 @@ window.addEventListener('touchend', () => { dragging = false; pinchDist = null; 
 
 const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
 
-function buildCircleDataURL() {
+function buildCircleDataURL(bg) {
   const out = document.createElement('canvas');
   out.width = SIZE; out.height = SIZE;
   const oc = out.getContext('2d');
+  if (bg !== 'transparent') {
+    oc.fillStyle = bg;
+    oc.fillRect(0, 0, SIZE, SIZE);
+  }
   oc.beginPath();
   oc.arc(SIZE / 2, SIZE / 2, SIZE / 2, 0, Math.PI * 2);
   oc.clip();
@@ -379,17 +401,36 @@ function buildCircleDataURL() {
   return out.toDataURL('image/png');
 }
 
+function showBgPicker(callback) {
+  const picker = document.getElementById('bg-picker');
+  picker.style.display = 'flex';
+  const handler = e => {
+    const bg = e.target.dataset.bg;
+    if (!bg) return;
+    picker.style.display = 'none';
+    document.querySelectorAll('.bg-opt').forEach(b => b.removeEventListener('click', handler));
+    callback(bg);
+  };
+  document.querySelectorAll('.bg-opt').forEach(b => b.addEventListener('click', handler));
+  document.getElementById('bg-cancel').onclick = () => {
+    picker.style.display = 'none';
+    document.querySelectorAll('.bg-opt').forEach(b => b.removeEventListener('click', handler));
+  };
+}
+
 document.getElementById('btn-download').addEventListener('click', () => {
-  const dataURL = buildCircleDataURL();
-  if (isIOS) {
-    document.getElementById('ios-result').src = dataURL;
-    document.getElementById('ios-modal').classList.add('open');
-  } else {
-    const a = document.createElement('a');
-    a.download = 'cropped-circle.png';
-    a.href = dataURL;
-    a.click();
-  }
+  showBgPicker(bg => {
+    const dataURL = buildCircleDataURL(bg);
+    if (isIOS) {
+      document.getElementById('ios-result').src = dataURL;
+      document.getElementById('ios-modal').classList.add('open');
+    } else {
+      const a = document.createElement('a');
+      a.download = 'cropped-circle.png';
+      a.href = dataURL;
+      a.click();
+    }
+  });
 });
 
 document.getElementById('ios-close').addEventListener('click', () => {
@@ -405,6 +446,10 @@ fileInput.addEventListener('change', e => loadImage(e.target.files[0]));
 dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
 dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
 dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.classList.remove('drag-over'); loadImage(e.dataTransfer.files[0]); });
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js');
+}
 </script>
 </body>
 </html>
